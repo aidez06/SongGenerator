@@ -1,3 +1,11 @@
+# SongGenerator
+
+## Cover Image
+![Cover Image](images/cover.png)
+
+## Documentation Image
+![Documentation Image](images/docs.png)
+
 
 # Project Setup Guide
 Follow the steps below to set up and run this project on your macOS machine:

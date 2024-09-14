@@ -4,20 +4,18 @@ from dotenv import load_dotenv
 import asyncio
 import os
 import logging
+from suno_api.deps import get_token 
 load_dotenv()
 
 class Music:
-    MAX_RETRIES = 5  # Max retries before giving up
-    RETRY_DELAY = 10  # Delay (in seconds) between retries
-    def __init__(self, token):
+    def __init__(self):
         self.model_version = os.getenv("MODEL_VERSION", "chirp-v3-5")  
         self.base_url = 'http://localhost:3000'  
         self.database = NotionDatabase(database_id=os.getenv('NOTION_DATABASE_ID'))
-        self.token = token
-        self.semaphore = asyncio.Semaphore(2)  # Limit concurrent tasks to 2
-
+    
+        self.semaphore = asyncio.Semaphore(2) 
     async def generate_music_payload(self, title, lyrics, style):
-        balance = await get_credits(self.token)
+        balance = await get_credits(next(get_token()))
         if balance.get('credits_left') == 0:
             return f"Failed to Create Music! \n Credits: {balance}"
 
@@ -31,23 +29,19 @@ class Music:
         return payload
 
     async def process_music(self, database, title, lyrics, style):
-        retries = 0
-
-        while retries < self.MAX_RETRIES:
-            async with self.semaphore:
-                payload = await self.generate_music_payload(
-                    title=title,
-                    lyrics=lyrics,
-                    style=style
-                )
-                if isinstance(payload, dict):
-                    audio_url = await generate_music(data=payload, token=self.token)
-                    if 'Too many running jobs' in audio_url:
-                        retries += 1
-                        logging.warning(f"Too many running jobs. Retrying {retries}/{self.MAX_RETRIES} in {self.RETRY_DELAY} seconds...")
-                        await asyncio.sleep(self.RETRY_DELAY)  # Wait before retrying
-                        continue  # Retry the task
-                    else:
+ 
+        async with self.semaphore:
+            payload = await self.generate_music_payload(
+                title=title,
+                lyrics=lyrics,
+                style=style
+            )
+            if isinstance(payload, dict):
+                while True:
+                    audio_url = await generate_music(data=payload, token=next(get_token()))
+                    print(audio_url, type(audio_url))
+                    if 'audiopipe' in audio_url:
+                        # Assuming the correct response is a dictionary
                         data = {
                             'Song Title': database.get('Song Title'),
                             'Simple Output': database.get('Simple Output'),
@@ -56,14 +50,19 @@ class Music:
                         }
                         database.update(data)
                         await self.database.insert_notion_data(data=database)
-                        return audio_url
-                else:
-                    logging.warning(payload)
-                    print(payload)
-                    return payload
+                        return audio_url  # Return the valid audio_url and exit the loop
+                    
+                    else:
+                        # Log a message to track retries and delays
+                        logging.warning(f"Retrying: Received {audio_url} (Type: {type(audio_url)}). Waiting 30 seconds before retrying...")
+                        await asyncio.sleep(30)  # Delay before retrying the request
 
-        logging.warning(f"Max retries reached for {title}. Failed to create music.")
-        return f"Failed to create music after {self.MAX_RETRIES} retries."
+
+
+            else:
+                logging.warning(payload)
+                print(payload)
+                return payload
 
     async def create_music(self):
         def get_key_from_dict(field_data):

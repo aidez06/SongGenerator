@@ -5,8 +5,7 @@ import asyncio
 
 async def main():
 
-    token = next(get_token())
-    music_instance = Music(token=token)
+    music_instance = Music()
     await music_instance.create_music() 
 
 if __name__ == '__main__':
